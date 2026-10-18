@@ -1,22 +1,22 @@
+import time
 import requests
 
+URL = "https://api.opendota.com/api/heroStats"
 
-def get_data_from_dota():
+
+def fetch_hero_stats(timeout=(3, 10)):
     try:
-        response = requests.get('https://api.opendota.com/api/heroStats', timeout=1)
+        response = requests.get(URL, timeout=timeout)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.HTTPError as err:
-        print("Something went wrong while fetching data. Please try again.")
+    except requests.exceptions.RequestException as err:
+        print(f"Fetch failed: {type(err).__name__}: {err}")
         return None
 
 
 def main():
-    data = get_data_from_dota()
-    if data is not None:
-        print(type(data))
-        print(len(data))
-        print(data[0])
+    data = fetch_hero_stats()
+    print(data)
 
 if __name__ == "__main__":
     main()

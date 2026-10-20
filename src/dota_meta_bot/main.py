@@ -1,4 +1,3 @@
-import time
 import requests
 
 URL = "https://api.opendota.com/api/heroStats"

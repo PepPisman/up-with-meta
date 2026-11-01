@@ -1,0 +1,194 @@
+[
+  {
+    "id": 1,
+    "name": "npc_dota_hero_antimage",
+    "displayName": "Anti-Mage",
+    "shortName": "antimage",
+    "gameVersionId": 190,
+    "stats": {
+      "enabled": true,
+      "attackType": "Melee",
+      "primaryAttribute": "agi",
+      "startingArmor": 6.1666669845581055,
+      "startingMagicArmor": 25,
+      "startingDamageMin": 54,
+      "startingDamageMax": 58,
+      "attackRate": 1.399999976158142,
+      "attackAnimationPoint": 0.30000001192092896,
+      "attackAcquisitionRange": 600,
+      "attackRange": 150,
+      "strengthBase": 21,
+      "strengthGain": 1.600000023841858,
+      "intelligenceBase": 12,
+      "intelligenceGain": 1.7999999523162842,
+      "agilityBase": 25,
+      "agilityGain": 2.799999952316284,
+      "hpRegen": 1.5,
+      "mpRegen": 0,
+      "moveSpeed": 315,
+      "moveTurnRate": 0.6000000238418579,
+      "visionDaytimeRange": 1800,
+      "visionNighttimeRange": 800
+    },
+    "roles": [
+      {
+        "roleId": "CARRY",
+        "level": 3
+      },
+      {
+        "roleId": "ESCAPE",
+        "level": 3
+      },
+      {
+        "roleId": "NUKER",
+        "level": 1
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "npc_dota_hero_axe",
+    "displayName": "Axe",
+    "shortName": "axe",
+    "gameVersionId": 190,
+    "stats": {
+      "enabled": true,
+      "attackType": "Melee",
+      "primaryAttribute": "str",
+      "startingArmor": 3,
+      "startingMagicArmor": 25,
+      "startingDamageMin": 56,
+      "startingDamageMax": 60,
+      "attackRate": 1.7000000476837158,
+      "attackAnimationPoint": 0.4000000059604645,
+      "attackAcquisitionRange": 600,
+      "attackRange": 150,
+      "strengthBase": 25,
+      "strengthGain": 2.700000047683716,
+      "intelligenceBase": 18,
+      "intelligenceGain": 1.600000023841858,
+      "agilityBase": 18,
+      "agilityGain": 1.7000000476837158,
+      "hpRegen": 2,
+      "mpRegen": 0,
+      "moveSpeed": 315,
+      "moveTurnRate": 0.6000000238418579,
+      "visionDaytimeRange": 1800,
+      "visionNighttimeRange": 800
+    },
+    "roles": [
+      {
+        "roleId": "CARRY",
+        "level": 1
+      },
+      {
+        "roleId": "INITIATOR",
+        "level": 3
+      },
+      {
+        "roleId": "DURABLE",
+        "level": 3
+      },
+      {
+        "roleId": "DISABLER",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "npc_dota_hero_bane",
+    "displayName": "Bane",
+    "shortName": "bane",
+    "gameVersionId": 190,
+    "stats": {
+      "enabled": true,
+      "attackType": "Ranged",
+      "primaryAttribute": "all",
+      "startingArmor": 3.8333334922790527,
+      "startingMagicArmor": 25,
+      "startingDamageMin": 24,
+      "startingDamageMax": 30,
+      "attackRate": 1.7000000476837158,
+      "attackAnimationPoint": 0.30000001192092896,
+      "attackAcquisitionRange": 800,
+      "attackRange": 425,
+      "strengthBase": 23,
+      "strengthGain": 2.5,
+      "intelligenceBase": 23,
+      "intelligenceGain": 2.5,
+      "agilityBase": 23,
+      "agilityGain": 2.5,
+      "hpRegen": 0,
+      "mpRegen": 0,
+      "moveSpeed": 305,
+      "moveTurnRate": 0.6000000238418579,
+      "visionDaytimeRange": 1800,
+      "visionNighttimeRange": 1200
+    },
+    "roles": [
+      {
+        "roleId": "NUKER",
+        "level": 1
+      },
+      {
+        "roleId": "DURABLE",
+        "level": 1
+      },
+      {
+        "roleId": "DISABLER",
+        "level": 3
+      },
+      {
+        "roleId": "SUPPORT",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "npc_dota_hero_crystal_maiden",
+    "displayName": "Crystal Maiden",
+    "shortName": "crystal_maiden",
+    "gameVersionId": 190,
+    "stats": {
+      "enabled": true,
+      "attackType": "Ranged",
+      "primaryAttribute": "int",
+      "startingArmor": 2.6666667461395264,
+      "startingMagicArmor": 25,
+      "startingDamageMin": 48,
+      "startingDamageMax": 54,
+      "attackRate": 1.7000000476837158,
+      "attackAnimationPoint": 0.44999998807907104,
+      "attackAcquisitionRange": 800,
+      "attackRange": 600,
+      "strengthBase": 17,
+      "strengthGain": 2.200000047683716,
+      "intelligenceBase": 20,
+      "intelligenceGain": 3.299999952316284,
+      "agilityBase": 16,
+      "agilityGain": 1.7999999523162842,
+      "hpRegen": 0,
+      "mpRegen": 0,
+      "moveSpeed": 280,
+      "moveTurnRate": 0.6000000238418579,
+      "visionDaytimeRange": 1800,
+      "visionNighttimeRange": 800
+    },
+    "roles": [
+      {
+        "roleId": "NUKER",
+        "level": 2
+      },
+      {
+        "roleId": "DISABLER",
+        "level": 2
+      },
+      {
+        "roleId": "SUPPORT",
+        "level": 3
+      }
+    ]
+  }
+]

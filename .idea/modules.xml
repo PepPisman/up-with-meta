@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/upWithMeta.iml" filepath="$PROJECT_DIR$/.idea/upWithMeta.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/dota-meta-ai.iml" filepath="$PROJECT_DIR$/.idea/dota-meta-ai.iml" />
     </modules>
   </component>
 </project>

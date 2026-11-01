@@ -192,15 +192,21 @@ def to_base_stats_payload(raw_heroes: list[dict]) -> list[dict]:
     return [convert_hero(hero) for hero in raw_heroes]
 
 
+def days_since_release(version: GameVersion, today: date | None = None) -> int:
+    return max(0, ((today or datetime.now(UTC).date()) - version.released).days)
+
+
 def ingest_stratz_base_stats(
     *,
     token: str,
     force: bool = False,
     post: Callable[..., requests.Response] = requests.post,
     today: date | None = None,
+    version: GameVersion | None = None,
 ) -> SnapshotResult:
-    version = fetch_latest_game_version(token=token, post=post)
-    days_since_patch = max(0, ((today or datetime.now(UTC).date()) - version.released).days)
+    if version is None:
+        version = fetch_latest_game_version(token=token, post=post)
+    days_since_patch = days_since_release(version, today)
 
     def fetch() -> list[dict]:
         return to_base_stats_payload(fetch_hero_constants(version.id, token=token, post=post))

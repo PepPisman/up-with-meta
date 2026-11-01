@@ -4,7 +4,7 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
 
@@ -148,6 +148,10 @@ def latest_snapshot_at(connection: Connection, source: str, patch: str) -> datet
     return connection.execute(LATEST_SNAPSHOT, {"source": source, "patch": patch}).scalar_one()
 
 
+def is_stale(snapshot_at: datetime, now: datetime, min_age_days: int | None) -> bool:
+    return min_age_days is not None and now - snapshot_at >= timedelta(days=min_age_days)
+
+
 def reject_unknown_heroes(connection: Connection, hero_ids: set[int]) -> None:
     known = set(
         connection.execute(
@@ -184,12 +188,15 @@ def ingest_snapshot(
     include_base_stats: bool = False,
     include_winrates: bool = True,
     update_heroes: bool = True,
+    min_age_days: int | None = None,
+    now: datetime | None = None,
 ) -> SnapshotResult:
     validate_patch(patch)
+    snapshot_at = now or datetime.now(UTC)
     with get_engine().begin() as connection:
         acquire_run_lock(connection)
         existing = latest_snapshot_at(connection, source, patch)
-        if existing is not None and not force:
+        if existing is not None and not force and not is_stale(existing, snapshot_at, min_age_days):
             return SnapshotResult(
                 fetched=False, snapshot_at=existing, patch=patch, source=source, heroes=0
             )
@@ -201,7 +208,6 @@ def ingest_snapshot(
         hero_ids = [row.hero_id for row in heroes or base_stats or winrates]
         reject_duplicates("id", hero_ids)
 
-        snapshot_at = datetime.now(UTC)
         if update_heroes:
             upsert_heroes(connection, heroes)
         else:

@@ -39,11 +39,23 @@ Prometheus/Grafana, MLflow.
   check (Liquipedia terms still unchecked; nothing from it is stored).
 - No farming routes (no clean data).
 - Cut RAG or the ML model before cutting the deploy phase.
+- Verification: the AI cross-checks numbers by comparing OpenDota with STRATZ through our own tool functions
+  (planned `cross_check(hero, bracket)`). Dotabuff and Dota2ProTracker are looked at by eye only, never by code.
+  When there is no comparable data (STRATZ daily data has holes), the AI says so instead of guessing.
+- Rare-pick distortion (MARKED, the AI must handle it): 3 picks / 3 wins shows 100% and would top any list.
+  Fix: minimum-picks filter at query time (as with `pro_*`) and every winrate is returned with its `picks`, so the
+  model sees the sample size. Possible upgrade later: Wilson lower bound or Bayesian shrinkage.
+  Weakness: a fixed threshold is arbitrary, a hero just above it is still noisy, and a real rare-but-strong
+  hero is hidden. Edge cases to teach through tool output, system prompt and evals: small sample, stale snapshot
+  (show age), bracket with no data (Immortal), turbo never pooled with pub, patch just changed, OpenDota and STRATZ
+  disagree (report both, never average silently), pairwise matchups are hints.
 
 ## Working rules
 
-- Application code in `src/` is written by me. Don't edit `src/` unless explicitly asked.
-  Review, point out bugs, give hints on request. No full solutions.
+- Application code in `src/` is written by Claude (changed 2026-10-31, so the owner can learn Python/FastAPI by
+  asking about the files). After writing or changing a file, Claude explains it only when asked, as a short TL;DR
+  that maps the Python/FastAPI mechanics to Laravel. Counter-argument: reading code you did not write teaches less
+  than writing it; the owner can switch back by restoring the old rule.
 - Infra (Dockerfile, compose, GitHub Actions, k8s manifests, ArgoCD, monitoring) can be written directly.
 - Every architectural choice gets one counter-argument or alternative.
 
@@ -130,11 +142,18 @@ Prometheus/Grafana, MLflow.
   are client updates, not gameplay patches. Take release dates from Liquipedia or the game files, not from news-post dates.
   So the OpenDota base-stat staleness above is over five weeks old, not two.
 - Dev workflow: fetch once to `data/heroStats.json`, develop against the file. No API loops.
-- API call policy: no scheduled refresh. The API is called only on demand or for a new patch, and never from the
-  request path (users read Postgres only). Gate before any network call: if `snapshots` already has a row for the
-  same `source` + `patch`, skip and say so; `--force` overrides. Advisory lock stops two runs fetching at once;
-  stop on HTTP 429. Accepted weakness: data goes stale unattended, so show snapshot age with answers.
-  Untested alternatives: patch detection from a data source, HTTP ETag/If-Modified-Since.
+- API call policy (changed 2026-10-31): a weekly update, never from the request path (users read Postgres only).
+  One command, `python -m dota_meta_bot.ingest.weekly [--force]`, run by hand or Windows Task Scheduler now and a
+  Kubernetes CronJob at M5-6 (no in-app scheduler; counter-argument: an in-app scheduler needs the app always
+  running and mixes ingest with API code). Steps: (1) one small STRATZ call finds the latest patch;
+  (2) OpenDota `/heroStats` (bracket picks/wins, pub, turbo, pro) is stored as a new snapshot stamped with that patch
+  when the newest `opendota` snapshot of that patch is 7+ days old (so a new patch always fetches);
+  (3) STRATZ base stats are fetched only when no `stratz` snapshot exists for that patch (no new patch = no heavy call).
+  Weekly snapshots of one patch are separate rows; never sum across snapshots and always read the latest one.
+  `--force` overrides both gates. Advisory lock stops two runs fetching at once; stop on HTTP 429; first error stops
+  the run. The plain `ingest.snapshot` command keeps its patch-only gate. Open: unverified whether `/heroStats` is a
+  rolling window, so a snapshot stamped with the newest patch may include matches from before it.
+  Accepted weakness: data goes stale if the schedule does not run, so show snapshot age with answers.
 
 ## OpenDota `/heroStats` facts
 
@@ -161,14 +180,23 @@ Prometheus/Grafana, MLflow.
 - [ ] Sanity check to add to ingest: total wins / total picks is 0.5000 per mode in a real pull (it was, today).
 - [ ] At home: load base stats from the game files (`npc_heroes.txt`) as a snapshot with source `gamefiles`;
   base-stat queries prefer `gamefiles`. Then compare against OpenDota to measure how far it lags.
-- [ ] Re-fetch winrates when a new patch drops: `python -m dota_meta_bot.ingest.snapshot --patch <new> --days-since-patch N`.
+- [x] Superseded by the weekly update (see API call policy): re-fetching on a new patch is now `ingest.weekly`.
 - [x] Heroes loader (`ingest/heroes.py`): 127 heroes loaded twice with no rewrites, broken file changes nothing.
 - [ ] Next loader: `snapshots` row (patch passed as a CLI argument, format-checked) + `hero_base_stats`, then `hero_winrate_stats`.
 - Learning path (one new skill each): [x] Postgres + hero loader;
   [ ] FastAPI top-10 endpoint; [ ] tests for it; [ ] one LLM tool function + one tool-calling round trip;
   [ ] items/matchups tables + item-options button.
-- [ ] Top-10 winrate logic for a given bracket.
-- [ ] Rare-pick distortion: explain, fix, one weakness of the fix.
+- [x] Rare-pick distortion: explained, fix and weakness written under Rules (marked). Implementation is step 4 below.
+- Ordered steps (approved 2026-10-31):
+  1. [x] CLAUDE.md rules and policy.
+  2. [x] Age gate in `ingest_snapshot` (`min_age_days`, `now`) + `ingest/weekly.py` + tests.
+  3. [ ] Latest-snapshot view (migration `0006`) so top-10 never mixes weekly snapshots.
+  4. [ ] `meta/` top-10 function with the minimum-picks filter, returning picks, patch, snapshot age, source.
+  5. [ ] FastAPI app: `GET /heroes/top?bracket=..&min_picks=..`, Pydantic response model, tests with `TestClient`.
+  6. [ ] Dockerfile + CI.
+  7. [ ] LLM tools (`get_winrate`, `cross_check`) + ~30 evals for the edge cases above.
+  8. [ ] Last: admin area with CRUD to adjust values. Edits must be flagged as a `manual` source with an audit row.
+     Counter-argument: hand-editing stats breaks "numbers come from data"; prefer overrides stored separately.
 - [~] STRATZ evaluation done 2026-10-20 (17 of 20 calls, responses in git-ignored `data/stratz/`; GraphQL at
   `https://api.stratz.com/graphql`, header `Authorization: Bearer <STRATZ_API_TOKEN>` plus `User-Agent: STRATZ_API`;
   introspection works; the token was pasted in chat, so rotate it on stratz.com/api). Results:
@@ -238,9 +266,11 @@ Prometheus/Grafana, MLflow.
   `StratzRateLimited`, errors inside HTTP 200 -> `StratzError`, the token never appears in messages),
   `fetch_latest_game_version`, `fetch_hero_constants`, `to_base_stats_payload` (pure conversion), `ingest_stratz_base_stats`,
   CLI. It reuses `ingest_snapshot(..., include_base_stats=True, include_winrates=False, update_heroes=False)`.
+- `src/dota_meta_bot/ingest/weekly.py` — `run_weekly` (STRATZ patch check, OpenDota snapshot with the 7-day gate, then
+  STRATZ base stats with the patch-only gate), CLI `python -m dota_meta_bot.ingest.weekly [--force]`.
 - `migrations/` + `alembic.ini` — Alembic (raw SQL), `migrations/versions/0001`..`0005`
 - `tests/` — `test_config.py`, `test_ingest_heroes.py`, `test_ingest_opendota.py`, `test_ingest_snapshot.py`,
-  `test_ingest_stratz.py`, `test_migrations.py`; `conftest.py` holds `migrated_database` (upgrade + TRUNCATE);
+  `test_ingest_stratz.py`, `test_ingest_weekly.py`, `test_migrations.py`; `conftest.py` holds `migrated_database` (upgrade + TRUNCATE);
   `fakes.py` has the fake HTTP response; `fixtures/heroStats_sample.json` (3 OpenDota heroes) and
   `fixtures/stratz_constants_sample.json` (4 STRATZ heroes: agility, strength, intelligence, universal)
 - `pyproject.toml` — dependencies (`pip install -e ".[dev]"`), pytest config

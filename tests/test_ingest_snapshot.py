@@ -1,6 +1,6 @@
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -276,6 +276,55 @@ def test_force_fetches_again_and_adds_a_second_snapshot(migrated_database):
         0,
         6,
     )
+
+
+def test_without_a_max_age_a_stored_patch_is_never_fetched_again(migrated_database):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    ingest_snapshot("7.41", fetch=FakeFetch(), now=start)
+    fetch = FakeFetch()
+
+    result = ingest_snapshot("7.41", fetch=fetch, now=start + timedelta(days=400))
+
+    assert result.fetched is False
+    assert fetch.calls == 0
+
+
+def test_a_snapshot_inside_the_max_age_is_skipped(migrated_database):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    first = ingest_snapshot("7.41", fetch=FakeFetch(), now=start)
+    fetch = FakeFetch()
+
+    result = ingest_snapshot("7.41", fetch=fetch, min_age_days=7, now=start + timedelta(days=6, hours=23))
+
+    assert result.fetched is False
+    assert result.snapshot_at == first.snapshot_at
+    assert fetch.calls == 0
+    assert count("snapshots") == 1
+
+
+def test_a_snapshot_at_the_max_age_is_fetched_again_as_a_new_row(migrated_database):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    ingest_snapshot("7.41", fetch=FakeFetch(), now=start)
+    fetch = FakeFetch()
+
+    result = ingest_snapshot("7.41", fetch=fetch, min_age_days=7, now=start + timedelta(days=7))
+
+    assert result.fetched is True
+    assert result.snapshot_at == start + timedelta(days=7)
+    assert fetch.calls == 1
+    assert (count("snapshots"), count("hero_winrate_stats")) == (2, 6)
+
+
+def test_the_max_age_only_looks_at_the_newest_snapshot_of_that_source_and_patch(migrated_database):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    ingest_snapshot("7.41", fetch=FakeFetch(), now=start)
+    ingest_snapshot("7.41", fetch=FakeFetch(), min_age_days=7, now=start + timedelta(days=8))
+    fetch = FakeFetch()
+
+    result = ingest_snapshot("7.41", fetch=fetch, min_age_days=7, now=start + timedelta(days=10))
+
+    assert result.fetched is False
+    assert fetch.calls == 0
 
 
 def test_a_new_patch_label_fetches(migrated_database):

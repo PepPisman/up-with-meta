@@ -13,7 +13,8 @@ from dota_meta_bot.ingest import weekly as weekly_module
 from dota_meta_bot.ingest.opendota import OpenDotaError
 from dota_meta_bot.ingest.snapshot import SOURCE_API
 from dota_meta_bot.ingest.stratz import SOURCE_STRATZ, StratzError
-from dota_meta_bot.ingest.weekly import WEEKLY_MIN_AGE_DAYS, main, run_weekly
+from dota_meta_bot.ingest.sources import WEEKLY_MIN_AGE_DAYS
+from dota_meta_bot.ingest.weekly import main, run_weekly
 
 START = datetime(2026, 10, 20, 12, tzinfo=UTC)
 NEWER_VERSION = {
@@ -50,10 +51,10 @@ def test_a_first_run_stores_winrates_for_the_latest_patch_and_base_stats(migrate
     result = weekly(post, fetch)
 
     assert result.patch == "7.41f"
-    assert result.winrates.fetched is True
-    assert (result.winrates.patch, result.winrates.source) == ("7.41f", SOURCE_API)
-    assert result.base_stats.fetched is True
-    assert (result.base_stats.patch, result.base_stats.source) == ("7.41f", SOURCE_STRATZ)
+    assert result.results[SOURCE_API].fetched is True
+    assert (result.results[SOURCE_API].patch, result.results[SOURCE_API].source) == ("7.41f", SOURCE_API)
+    assert result.results[SOURCE_STRATZ].fetched is True
+    assert (result.results[SOURCE_STRATZ].patch, result.results[SOURCE_STRATZ].source) == ("7.41f", SOURCE_STRATZ)
     assert (snapshots_of(SOURCE_API), snapshots_of(SOURCE_STRATZ)) == (1, 1)
     assert (count("hero_winrate_stats"), count("hero_base_stats")) == (3, 4)
     with get_engine().connect() as connection:
@@ -70,7 +71,7 @@ def test_a_repeat_run_the_same_day_calls_nothing_but_the_cheap_version_check(mig
 
     result = weekly(post, fetch, now=START + timedelta(hours=1))
 
-    assert (result.winrates.fetched, result.base_stats.fetched) == (False, False)
+    assert (result.results[SOURCE_API].fetched, result.results[SOURCE_STRATZ].fetched) == (False, False)
     assert fetch.calls == 0
     assert len(post.calls) == 1
     assert post.hero_calls == []
@@ -84,7 +85,7 @@ def test_six_days_later_is_still_inside_the_window(migrated_database):
 
     result = weekly(FakeStratz(), fetch, now=START + timedelta(days=6, hours=23))
 
-    assert result.winrates.fetched is False
+    assert result.results[SOURCE_API].fetched is False
     assert fetch.calls == 0
 
 
@@ -95,8 +96,8 @@ def test_a_week_later_refreshes_winrates_but_not_base_stats_without_a_new_patch(
 
     result = weekly(post, fetch, now=START + timedelta(days=7))
 
-    assert result.winrates.fetched is True
-    assert result.base_stats.fetched is False
+    assert result.results[SOURCE_API].fetched is True
+    assert result.results[SOURCE_STRATZ].fetched is False
     assert fetch.calls == 1
     assert post.hero_calls == []
     assert (snapshots_of(SOURCE_API), snapshots_of(SOURCE_STRATZ)) == (2, 1)
@@ -111,7 +112,7 @@ def test_a_new_patch_fetches_both_even_inside_the_window(migrated_database):
     result = weekly(post, fetch, now=START + timedelta(days=1))
 
     assert result.patch == "7.42"
-    assert (result.winrates.fetched, result.base_stats.fetched) == (True, True)
+    assert (result.results[SOURCE_API].fetched, result.results[SOURCE_STRATZ].fetched) == (True, True)
     assert fetch.calls == 1
     assert len(post.hero_calls) == 1
     with get_engine().connect() as connection:
@@ -131,7 +132,7 @@ def test_force_fetches_both_again(migrated_database):
 
     result = weekly(post, fetch, now=START + timedelta(hours=1), force=True)
 
-    assert (result.winrates.fetched, result.base_stats.fetched) == (True, True)
+    assert (result.results[SOURCE_API].fetched, result.results[SOURCE_STRATZ].fetched) == (True, True)
     assert fetch.calls == 1
     assert len(post.hero_calls) == 1
 

@@ -10,29 +10,25 @@ from dota_meta_bot.core.config import get_settings
 from dota_meta_bot.ingest.heroes import InvalidHeroData
 from dota_meta_bot.ingest.opendota import OpenDotaError, fetch_hero_stats
 from dota_meta_bot.ingest.snapshot import (
-    SOURCE_API,
     IngestAlreadyRunning,
     InvalidPatch,
     SnapshotResult,
     UnknownHeroes,
     describe_result,
-    ingest_snapshot,
 )
-from dota_meta_bot.ingest.stratz import (
-    StratzError,
-    days_since_release,
-    fetch_latest_game_version,
-    ingest_stratz_base_stats,
+from dota_meta_bot.ingest.sources import (
+    SOURCES,
+    SourceContext,
+    SourceSpec,
+    automated_sources,
 )
-
-WEEKLY_MIN_AGE_DAYS = 7
+from dota_meta_bot.ingest.stratz import StratzError, fetch_latest_game_version
 
 
 @dataclass(frozen=True)
 class WeeklyResult:
     patch: str
-    winrates: SnapshotResult
-    base_stats: SnapshotResult
+    results: dict[str, SnapshotResult]
 
 
 def run_weekly(
@@ -43,21 +39,14 @@ def run_weekly(
     fetch: Callable[[], object] = fetch_hero_stats,
     today: date | None = None,
     now: datetime | None = None,
+    sources: tuple[SourceSpec, ...] = SOURCES,
 ) -> WeeklyResult:
     version = fetch_latest_game_version(token=token, post=post)
-    winrates = ingest_snapshot(
-        version.name,
-        fetch=fetch,
-        source=SOURCE_API,
-        force=force,
-        days_since_patch=days_since_release(version, today),
-        min_age_days=WEEKLY_MIN_AGE_DAYS,
-        now=now,
+    context = SourceContext(
+        token=token, version=version, force=force, post=post, fetch=fetch, today=today, now=now
     )
-    base_stats = ingest_stratz_base_stats(
-        token=token, force=force, post=post, today=today, version=version
-    )
-    return WeeklyResult(patch=version.name, winrates=winrates, base_stats=base_stats)
+    results = {spec.name: spec.run(context) for spec in automated_sources(sources)}
+    return WeeklyResult(patch=version.name, results=results)
 
 
 def main(
@@ -93,8 +82,8 @@ def main(
         return 1
 
     print(f"Latest patch: {result.patch}")
-    print(f"Winrates: {describe_result(result.winrates)}")
-    print(f"Base stats: {describe_result(result.base_stats)}")
+    for name, source_result in result.results.items():
+        print(f"{name}: {describe_result(source_result)}")
     return 0
 
 

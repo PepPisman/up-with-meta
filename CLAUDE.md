@@ -92,6 +92,36 @@ Prometheus/Grafana, MLflow.
   `hero_winrate_stats` (WIDE, stored as fetched: one row per hero per snapshot with b1..b7, pub, turbo,
   pro pick/win columns). Stat tables FK to `snapshots`. Everything else is computed in views:
   `v_bracket_winrate` (unpivot, bot filters by bracket), `v_bucket_winrate`, `v_winrate_by_mode`.
+  These three return every snapshot. Application code reads the `v_latest_*` versions instead (migrations `0006`, `0007`):
+  `v_latest_winrate_snapshot` keeps the newest snapshot that has winrate rows per `source` + `patch` and flags
+  `is_current` on the newest one per source; `v_latest_bracket_winrate`, `v_latest_bucket_winrate` and
+  `v_latest_winrate_by_mode` join the plain views to it. Top-10 and the AI filter `is_current` for the current meta.
+  Counter-argument: the DB hides old weekly rows from the app but keeps them, so a trend query needs the plain views.
+  Not yet covered: base stats (`hero_base_stats`) have no latest view; `--force` can add several rows per patch.
+- Snapshot growth and performance (measured 2026-11-02 on synthetic weekly data in a rolled-back transaction on
+  `dota_meta_test`, 3 winrate sources): storage is not the risk (~127 winrate rows a week per source, a few MB in 10
+  years). Query shape was: the `0006` views joined to the latest snapshot after unpivoting every snapshot, so a
+  top-10 took 358 ms (bucket) and 747 ms (mode) at 10 years. Migration `0007` picks the latest snapshot first and
+  unpivots only its rows: about 2.5 ms at 10 years and 1 ms at 5, the same as reading one snapshot directly.
+  All snapshots are kept (decided); revisit pruning only if a measurement says so. Caveats: the fast plan relies on
+  rows being stored in time order (true for weekly inserts; after a backfill or bulk load run ANALYZE and re-measure);
+  the bucket boundaries now live in two views (`v_bucket_winrate`, `v_latest_bucket_winrate`), guarded by a test
+  that compares the latest views with the plain ones. Rule: any new per-snapshot table (`hero_matchups`,
+  `hero_synergies`, `hero_item_popularity`: ~16k rows per snapshot) must decide keep-all vs latest-only before it
+  is built, and gets a latest view that selects the snapshot first.
+- Sources (decided 2026-11-02), checked against our data and the sources' own docs:
+  winrates and pick counts, brackets 1-7, pub, turbo, pro: OpenDota `/heroStats` (Immortal is NOT available there:
+  `8_pick`/`8_win` are 0 for all 127 heroes). Hero base stats: STRATZ constants. Immortal and ranked-only: STRATZ
+  later, once its data holes and storage terms are resolved. Draft-prediction match data: OpenDota Explorer after a
+  feasibility spike, STRATZ match data as the alternative. Dotabuff and Dota2ProTracker: by eye only, never code
+  (Dotabuff's terms are still unread: a guessed URL 404ed; ProTracker's terms ban bots and storing its data).
+  Correction to a claim made in chat: STRATZ does not "power" ProTracker; its homepage says "Data enriched by
+  Imprint & Stratz", and it shows a 7000+ MMR slice that our STRATZ Immortal numbers do not reproduce.
+  Verification order when checking a number (owner's list): Dotabuff, Dota2ProTracker, STRATZ, OpenDota. The first
+  two are manual, so `cross_check` can only compare STRATZ with OpenDota and tell the owner where to look by eye.
+  Which stored source the AI reads is chosen per question type by data quality, not by that order.
+  Source registry (`ingest/sources.py`, small, approved): one entry per source with name, kind, automated flag,
+  verification rank, gate and job; a new source is one entry plus its parser; unknown source names are rejected.
 - Local DB: the Windows Postgres 18 service (`postgresql-x64-18`, localhost:5432). Role `dota` (generated password
   in git-ignored `.env`), databases `dota_meta` (dev) and `dota_meta_test`. The same server also hosts Menthar's
   databases: never touch `menthar*`. No Docker on Windows: `docker-compose.yml` (image `pgvector/pgvector:pg18`,
@@ -165,6 +195,11 @@ Prometheus/Grafana, MLflow.
 - `base_health` (120) identical for all heroes: placeholder, don't store. `base_mr` (25) and `cm_enabled` also constant.
   `base_mana` has 3 distinct values (earlier note saying it was constant was wrong).
 - `*_trend` arrays: 7 entries (likely rolling 7 days; unverified).
+- Explorer (`/api/explorer?sql=...`, checked 2026-11-02): live, exposes `public_matches` (`radiant_team`, `dire_team`
+  hero id arrays, `radiant_win`, `duration`, `avg_rank_tier`, `game_mode`, `lobby_type`). It is a sample (a maintainer
+  said in 2017 only matches with 3+ players showing MMR and balanced modes are eligible; unverified for today). The
+  newest rows are unfinished matches (`duration` 0, teams `[0,0,0,0,0]`). A 24-hour `count(*)` hit "statement
+  timeout", so pull small paged queries. Free tier: 60 calls/min, 3000/day.
 - Rate limit 60/min without key. ~0.4s warm / ~0.6s cold. Use `timeout=(3, 10)`.
 
 ## Next
@@ -190,7 +225,15 @@ Prometheus/Grafana, MLflow.
 - Ordered steps (approved 2026-10-31):
   1. [x] CLAUDE.md rules and policy.
   2. [x] Age gate in `ingest_snapshot` (`min_age_days`, `now`) + `ingest/weekly.py` + tests.
-  3. [ ] Latest-snapshot view (migration `0006`) so top-10 never mixes weekly snapshots.
+  3. [x] Latest-snapshot views (migration `0006`) so top-10 never mixes weekly snapshots.
+  3b. [x] Benchmarked the views; rewrote them to filter first (migration `0007`, see Snapshot growth).
+  3c. [x] Applied `0006` + `0007` to `dota_meta` by the owner (2026-11-02): head `0007`, `v_latest_winrate_snapshot` shows
+      `7.41f` / `opendota` / current. No weekly run yet (the only stored OpenDota snapshot is from 2026-10-20).
+  3d. [x] Source registry (`ingest/sources.py`) + `weekly.py` refactor + tests. Deviation: `get_source` rejects unknown
+      names, but the low-level `ingest_snapshot` still accepts any source string (dev file loads use `opendota_file`).
+      `automated` is derived (a source with a job is automated), and the list order is the run order.
+  3e. [ ] Later, M3-4, before the predictor: Explorer feasibility spike (~1,000 finished matches in small pages;
+      measure rows per call, share with all 10 heroes, rank spread, calls per 100k matches). No tables until then.
   4. [ ] `meta/` top-10 function with the minimum-picks filter, returning picks, patch, snapshot age, source.
   5. [ ] FastAPI app: `GET /heroes/top?bracket=..&min_picks=..`, Pydantic response model, tests with `TestClient`.
   6. [ ] Dockerfile + CI.
@@ -266,12 +309,17 @@ Prometheus/Grafana, MLflow.
   `StratzRateLimited`, errors inside HTTP 200 -> `StratzError`, the token never appears in messages),
   `fetch_latest_game_version`, `fetch_hero_constants`, `to_base_stats_payload` (pure conversion), `ingest_stratz_base_stats`,
   CLI. It reuses `ingest_snapshot(..., include_base_stats=True, include_winrates=False, update_heroes=False)`.
-- `src/dota_meta_bot/ingest/weekly.py` — `run_weekly` (STRATZ patch check, OpenDota snapshot with the 7-day gate, then
-  STRATZ base stats with the patch-only gate), CLI `python -m dota_meta_bot.ingest.weekly [--force]`.
-- `migrations/` + `alembic.ini` — Alembic (raw SQL), `migrations/versions/0001`..`0005`
+- `src/dota_meta_bot/ingest/sources.py` — the source registry: `SourceSpec` (name, kind, verification rank, optional job),
+  `SOURCES` (opendota, stratz automated; dotabuff, dota2protracker reference-only), `get_source`, `automated_sources`,
+  `verification_order`, `WEEKLY_MIN_AGE_DAYS`.
+- `src/dota_meta_bot/ingest/weekly.py` — `run_weekly` (one STRATZ patch check, then each automated source in order:
+  OpenDota snapshot with the 7-day gate, then STRATZ base stats with the patch-only gate), CLI
+  `python -m dota_meta_bot.ingest.weekly [--force]`.
+- `migrations/` + `alembic.ini` — Alembic (raw SQL), `migrations/versions/0001`..`0007`
 - `tests/` — `test_config.py`, `test_ingest_heroes.py`, `test_ingest_opendota.py`, `test_ingest_snapshot.py`,
-  `test_ingest_stratz.py`, `test_ingest_weekly.py`, `test_migrations.py`; `conftest.py` holds `migrated_database` (upgrade + TRUNCATE);
+  `test_ingest_stratz.py`, `test_ingest_sources.py`, `test_ingest_weekly.py`, `test_migrations.py`; `conftest.py` holds `migrated_database` (upgrade + TRUNCATE);
   `fakes.py` has the fake HTTP response; `fixtures/heroStats_sample.json` (3 OpenDota heroes) and
   `fixtures/stratz_constants_sample.json` (4 STRATZ heroes: agility, strength, intelligence, universal)
+- `COMMANDS.md` — every command (migrations, ingest, tests) with what it does, what it writes and whether it uses the network
 - `pyproject.toml` — dependencies (`pip install -e ".[dev]"`), pytest config
 - `docker-compose.yml`, `.env.example` — local pgvector Postgres 18 (copy `.env.example` to `.env`, set a password)
